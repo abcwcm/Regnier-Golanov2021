@@ -1,0 +1,11 @@
+sample.ID	qc.data.dir	condition
+E1-S1	E1-S1	SAH
+E3-S2	E3-S2	SAH
+E4-S3	E4-S3	SAH
+E5-S4	E5-S4	SAH
+N4-S8	N4-S8	naive
+N5-S9	N5-S9	naive
+N7-S10	N7-S10	naive
+S1-S5	S1-S5	sham
+S2-S6	S2-S6	sham
+S3-S7	S3-S7	sham

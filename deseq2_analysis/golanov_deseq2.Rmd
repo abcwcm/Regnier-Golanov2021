@@ -1,0 +1,226 @@
+---
+title: Identifying Candidates for Master Regulators of Transcriptome Changes in Murine Hippocampi Following Subarachnoid Hemorrhage
+bibliography: methodsEugene.bib
+#runtime: shiny_prerendered
+output:
+  html_document:
+    code_folding: hide
+    theme: space
+    toc: yes
+    toc_depth: 3
+    toc_float: no
+  BiocStyle::html_document2:
+    code_folding: hide
+    toc: yes
+    toc_float: yes
+  knitrBootstrap::bootstrap_document:
+    highlight.chooser: yes
+    theme.chooser: yes
+  pdf_document:
+    toc: yes
+always_allow_html: yes
+---
+
+```{r setup, bootstrap.show.code = FALSE, results='hide', bootstrap.show.message=FALSE, warning=FALSE, cache=TRUE, echo=FALSE, comment=FALSE}
+knitr::opts_chunk$set(bootstrap.show.code = FALSE, message=FALSE, warning=FALSE)
+suppressMessages(library(QoRTs))
+suppressMessages(library(goseq))
+suppressMessages(library(reshape2))
+suppressMessages(library(RColorBrewer))
+suppressMessages(library(ggplot2))
+suppressMessages(library(tidyr))
+suppressMessages(library(plyr))
+suppressMessages(library(kableExtra))
+suppressMessages(library(magrittr))
+suppressMessages(library(gtools))
+suppressMessages(library(plotly))
+suppressMessages(library(gage))
+suppressMessages(library(openxlsx))
+suppressMessages(library(pathview))
+suppressMessages(library(DESeq2))
+suppressMessages(library(edgeR))
+suppressMessages(library(limma))
+suppressMessages(library(openxlsx))
+suppressMessages(library(genefilter))
+suppressMessages(library(pheatmap))
+suppressMessages(library(gplots))
+suppressMessages(library(treemap))
+suppressMessages(library(scales))
+suppressMessages(library(Hmisc))
+suppressMessages(library(knitr))
+suppressMessages(library(annotate))
+suppressMessages(library(data.table))
+suppressMessages(library(ggrepel))
+suppressMessages(library(ggpubr))
+suppressMessages(library(gridExtra))
+
+getOutputFormat <- function() {
+  output <- rmarkdown:::parse_yaml_front_matter(
+    readLines(knitr::current_input())
+    )$output
+  if (is.list(output)){
+    return(names(output)[1])
+  } else {
+    return(output[1])
+  }
+}
+if(getOutputFormat() == 'pdf_document') {
+  knitr::opts_chunk$set(bootstrap.show.code = FALSE, message=FALSE, warning=FALSE, echo=FALSE, results='hide', plots='all')
+}
+```
+
+
+
+
+```{r counts, message=FALSE, warning=FALSE, cache=TRUE, echo=FALSE, comment=FALSE, context="data"}
+counts <- read.table(file = "gene.counts.txt", header = TRUE, check.names=FALSE, row.names=1)
+decoderFile <- "decoder.txt"
+decoder.data <- read.table(decoderFile,header=T,stringsAsFactors=F,sep="\t")
+table(colnames(counts) == decoder.data$sample.ID)
+counts <- counts[,c(decoder.data$sample.ID)]
+table(colnames(counts) == decoder.data$sample.ID)
+decoder.data$condition <- factor(decoder.data$condition)
+```
+
+# Samples
+
+The following samples were part of this analysis:
+
+```{r samples, message=FALSE, warning=FALSE, cache=TRUE, echo=FALSE, comment=FALSE, context="data"}
+decoder_df <- decoder.data[,c(-2)]
+ kable(decoder_df, row.names=FALSE,  padding = 0, longtable=TRUE) %>%  kable_styling(bootstrap_options = c("striped", "hover", "condensed"))
+```
+
+***
+# Processing
+The sequences were aligned to the mouse reference genome (mm9) using *STAR* [@star], a universal RNA-seq aligner. To improve accuracy of the mapping, the genome was created with a splice junction database based on UCSC mm9 annotation from Illumina's iGenomes. Sequences that mapped to more than one locus were excluded from downstream analysis, since they cannot be confidently assigned.
+
+Uniquely mapped sequences were intersected with composite gene models from Gencode v28 basic annotation using *featureCounts* [@featurecounts], a tool for assigning sequence reads to genomic features. Composite gene models for each gene consisted of the union of exons of all transcript isoforms of that gene. Uniquely mapped reads that unambiguously overlapped with no more than one Gencode composite gene model were counted for that gene model; the remaining reads were discarded. The counts for each gene model correspond to gene expression values, and were used for subsequent analyses.
+
+***
+# PCA
+Principal components analysis (PCA) was performed to visualize sample-to-sample distances and to test if the samples could be separated based on treatment.
+The raw gene expression values were transformed using a variance stabilizing transformation (with the 'vst' function from the DESeq2). 
+Vst-transformed data becomes approximately homoskedastic (the variance is similar across different ranges of the mean values), which PCA works best with.
+Vst-transformed can then be used directly for computing distances between samples and making PCA plots.
+The top 500 genes showing the highest variance were selected, and the principal components were computed and plotted.
+
+Below is a PCA plot of all of the samples which is colored by condition:
+
+
+```{r pca, message=FALSE, warning=FALSE, cache=TRUE, echo=FALSE, comment=FALSE,  fig.width=10, fig.height=5.5, context="data"}
+deseq2.coldata <- data.frame(decoder.data, row.names = colnames(counts), stringsAsFactors=F)
+deseq2.coldata$group <- factor(decoder.data$condition)
+deseq2.cds <- DESeq2::DESeqDataSetFromMatrix(countData = counts,colData = deseq2.coldata, design = ~group)
+deseq2.cds <- estimateSizeFactors(deseq2.cds)
+deseq2.vst <- DESeq2::vst(deseq2.cds, blind=TRUE)
+
+ntop = 500
+Pvars <- rowVars(assay(deseq2.vst))
+select <- order(Pvars, decreasing = TRUE)[seq_len(min(ntop, length(Pvars)))]
+PCA <- prcomp(t(assay(deseq2.vst)[select, ]), scale = F)
+percentVar <- round(100*PCA$sdev^2/sum(PCA$sdev^2),1)
+dataGG = data.frame(PC1 = PCA$x[,1], PC2 = PCA$x[,2], sampleName = row.names(colData(deseq2.vst)),colData(deseq2.vst))
+p <- qplot(PC1, PC2, data = dataGG, color =group,size=I(3), label=sampleName, main = "PC1 vs PC2, top 500 variable genes") + labs(x = paste0("PC1, VarExp:", round(percentVar[1],4)), y = paste0("PC2, VarExp:", round(percentVar[2],4))) + theme_bw() + theme(legend.position="right")   +geom_label_repel(aes(label=sampleName))
+p
+```
+
+
+
+
+# Differential expression analysis {.tabset}
+
+Based on the available samples, the following questions were addressed:
+
+- What's different between SAH and sham?
+- What's different between SAH and naive?
+- What's different between sham and naive?
+
+Using *DESeq2*, we can address these questions using a Wald test to do all three pairwise tests independently.
+
+
+```{r de_analysis_simple, message=FALSE, eval=TRUE, warning=FALSE, cache=TRUE, echo=FALSE, comment=FALSE}
+decoder.data.sub <-  subset(decoder.data) # decoder.data
+cnts <- counts[,decoder.data.sub$sample.ID]
+conds <- factor(make.names(decoder.data.sub$condition)) 
+
+library(DESeq2)	
+deseq2.coldata <- data.frame(condition = conds, row.names = colnames(cnts), decoder.data.sub)
+deseq2.dds <- DESeq2::DESeqDataSetFromMatrix(countData = cnts, colData = deseq2.coldata, design = ~ condition)
+keep <- rowSums(counts(deseq2.dds)) >= 10
+deseq2.dds <- deseq2.dds[keep,]
+deseq2.dds <- DESeq(deseq2.dds)
+
+#padj 0.10
+deseq2.res <- results(deseq2.dds, contrast=c("condition","SAH", "sham"), alpha=0.10)
+deseq2.res.sig.sah_vs_sham_0.10 <- as.data.frame(subset(deseq2.res , padj < 0.10))
+deseq2.res.sig.sah_vs_sham.all_0.10<- as.data.frame(deseq2.res)
+
+deseq2.res <- results(deseq2.dds, contrast=c("condition","SAH", "naive"), alpha=0.10)
+deseq2.res.sig.sah_vs_naive_0.10 <- as.data.frame(subset(deseq2.res , padj < 0.10))
+deseq2.res.sig.sah_vs_naive.all_0.10<- as.data.frame(deseq2.res)
+
+deseq2.res <- results(deseq2.dds, contrast=c("condition","sham", "naive"), alpha=0.10)
+deseq2.res.sig.sham_vs_naive_0.10 <- as.data.frame(subset(deseq2.res , padj < 0.10))
+deseq2.res.sig.sham_vs_naive.all_0.10<- as.data.frame(deseq2.res)
+
+```
+
+
+
+Using the Wald test, the following genes were detected as differentially expressed:
+
+```{r  dge_table, message=FALSE, warning=FALSE, cache=TRUE, echo=FALSE, eval=T, comment=FALSE}
+df_deg <- data.frame("padj < 0.10" = c(nrow(deseq2.res.sig.sah_vs_sham_0.10), nrow(deseq2.res.sig.sah_vs_naive_0.10), nrow(deseq2.res.sig.sham_vs_naive_0.10)),check.names=F, stringsAsFactors = F)
+row.names(df_deg) <- c("SAH vs. sham", "SAH vs. naive", "sham vs. naive")
+kable(df_deg, row.names=T)  %>%  kable_styling(bootstrap_options = c("striped", "hover", "condensed"))
+```
+
+
+
+
+Considering the sham and naive samples are similiar (we only detect at most `r nrow(deseq2.res.sig.sham_vs_naive_0.10)` differentially expressed  with a adjusted p thresold of 0.10 when comparing sham to naive`), we treated sham and naive samples as one and contrasting SAH to that combined group.  
+
+
+```{r de_analysis_combine_sham_naive, message=FALSE, eval=TRUE, warning=FALSE, cache=TRUE, echo=FALSE, comment=FALSE}
+## treat sham and naive as one
+decoder.data.sub <-  subset(decoder.data) # decoder.data
+cnts <- counts[,decoder.data.sub$sample.ID]
+decoder.data.sub$condition <- as.character(decoder.data.sub$condition)
+decoder.data.sub[decoder.data.sub$condition == "sham",]$condition <- "ctrl"
+decoder.data.sub[decoder.data.sub$condition == "naive",]$condition <- "ctrl"
+decoder.data.sub$condition <- factor(decoder.data.sub$condition, levels=c("ctrl", "SAH"))
+conds <- factor(make.names(decoder.data.sub$condition),  levels=c("ctrl", "SAH")) 
+
+
+library(DESeq2)	
+deseq2.coldata <- data.frame(condition = conds, row.names = colnames(cnts), decoder.data.sub)
+deseq2.dds <- DESeq2::DESeqDataSetFromMatrix(countData = cnts, colData = deseq2.coldata, design = ~ condition)
+keep <- rowSums(counts(deseq2.dds)) >= 10
+deseq2.dds <- deseq2.dds[keep,]
+deseq2.dds <- DESeq(deseq2.dds)
+
+deseq2.res <- results(deseq2.dds, contrast=c("condition","SAH", "ctrl"), alpha=0.10)
+deseq2.res.sig.sah_vs_ctrl_0.10 <- as.data.frame(subset(deseq2.res , padj < 0.10))
+deseq2.res.sig.sah_vs_ctrl.all_0.10 <- as.data.frame(deseq2.res)
+```
+
+Using this approach, the following genes were detected as differentially expressed:
+
+```{r  combined_sham_naive_deg_table, message=FALSE, warning=FALSE, cache=TRUE, echo=FALSE, eval=T, comment=FALSE}
+df_deg <- data.frame("padj < 0.10" = c(nrow(deseq2.res.sig.sah_vs_ctrl_0.10)),check.names=F, stringsAsFactors = F)
+row.names(df_deg) <- c("SAH vs. control (sham + naive)")
+kable(df_deg, row.names=T)  %>%  kable_styling(bootstrap_options = c("striped", "hover", "condensed"))
+```
+
+
+
+
+
+
+# Session Info
+```{r session, message=FALSE, warning=FALSE, cache=TRUE,comment="",echo=FALSE, fig.width=10, fig.height=5.5, context="data"}
+sessionInfo()
+```
+
+# References
