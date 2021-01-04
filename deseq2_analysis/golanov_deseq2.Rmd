@@ -73,8 +73,9 @@ if(getOutputFormat() == 'pdf_document') {
 
 
 ```{r counts, message=FALSE, warning=FALSE, cache=TRUE, echo=FALSE, comment=FALSE, context="data"}
-counts <- read.table(file = "gene.counts.txt", header = TRUE, check.names=FALSE, row.names=1)
-decoderFile <- "decoder.txt"
+## This is the code for actually reading in the count matrix
+counts <- read.table(file = "genecounts.txt", header = TRUE, check.names=FALSE, row.names=1)
+decoderFile <- "decoder.txt" # this needs to be set up to match the samples and conditions
 decoder.data <- read.table(decoderFile,header=T,stringsAsFactors=F,sep="\t")
 table(colnames(counts) == decoder.data$sample.ID)
 counts <- counts[,c(decoder.data$sample.ID)]
@@ -121,7 +122,7 @@ select <- order(Pvars, decreasing = TRUE)[seq_len(min(ntop, length(Pvars)))]
 PCA <- prcomp(t(assay(deseq2.vst)[select, ]), scale = F)
 percentVar <- round(100*PCA$sdev^2/sum(PCA$sdev^2),1)
 dataGG = data.frame(PC1 = PCA$x[,1], PC2 = PCA$x[,2], sampleName = row.names(colData(deseq2.vst)),colData(deseq2.vst))
-p <- qplot(PC1, PC2, data = dataGG, color =group,size=I(3), label=sampleName, main = "PC1 vs PC2, top 500 variable genes") + labs(x = paste0("PC1, VarExp:", round(percentVar[1],4)), y = paste0("PC2, VarExp:", round(percentVar[2],4))) + theme_bw() + theme(legend.position="right")   +geom_label_repel(aes(label=sampleName))
+p <- qplot(PC1, PC2, data = dataGG, color =group,size=I(3), label=sampleName, main = "PC1 vs PC2, top 500 variable genes") + labs(x = paste0("PC1, VarExp:", round(percentVar[1],4)), y = paste0("PC2, VarExp:", round(percentVar[2],4))) + theme_bw() + theme(legend.position="right")   + geom_label_repel(aes(label=sampleName))
 p
 ```
 
@@ -136,7 +137,7 @@ Based on the available samples, the following questions were addressed:
 - What's different between SAH and naive?
 - What's different between sham and naive?
 
-Using *DESeq2*, we can address these questions using a Wald test to do all three pairwise tests independently.
+Using `DESeq2`, we can address these questions using a Wald test to do all three pairwise tests independently.
 
 
 ```{r de_analysis_simple, message=FALSE, eval=TRUE, warning=FALSE, cache=TRUE, echo=FALSE, comment=FALSE}
@@ -179,7 +180,7 @@ kable(df_deg, row.names=T)  %>%  kable_styling(bootstrap_options = c("striped", 
 
 
 
-Considering the sham and naive samples are similiar (we only detect at most `r nrow(deseq2.res.sig.sham_vs_naive_0.10)` differentially expressed  with a adjusted p thresold of 0.10 when comparing sham to naive`), we treated sham and naive samples as one and contrasting SAH to that combined group.  
+Considering the sham and naive samples are similiar (we only detect at most `r nrow(deseq2.res.sig.sham_vs_naive_0.10)` differentially expressed  with a adjusted p threshold of 0.10 when comparing sham to naive`), we treated sham and naive samples as one and contrasting SAH to that combined group.  
 
 
 ```{r de_analysis_combine_sham_naive, message=FALSE, eval=TRUE, warning=FALSE, cache=TRUE, echo=FALSE, comment=FALSE}
@@ -212,8 +213,6 @@ df_deg <- data.frame("padj < 0.10" = c(nrow(deseq2.res.sig.sah_vs_ctrl_0.10)),ch
 row.names(df_deg) <- c("SAH vs. control (sham + naive)")
 kable(df_deg, row.names=T)  %>%  kable_styling(bootstrap_options = c("striped", "hover", "condensed"))
 ```
-
-
 
 
 
