@@ -8,3 +8,5 @@ For details of the differential gene expression analysis, see [the Rmd in `deseq
 All scripts were written by Paul Zumbo and Friederike Dündar.
 
 Don't hesitate to [get in touch](https://abc.med.cornell.edu/) with questions related to the code.
+
+![](WCM_MB_LOGO_HZSS1L_CLR_RGB.png)
